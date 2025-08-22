@@ -236,18 +236,18 @@ def process_file_async(file_obj: dict, channel: str, thread_ts: str, user_id: st
         strings_result = strings_analyzer.safe_analyze(local)
         analyzers_results.append(strings_result)
 
-        # Generate executive summary (post this first)
+        # Generate analysis guide (post this first)
         summary_analyzer = SummaryAnalyzer()
         summary_result = summary_analyzer.safe_analyze(local, all_results=analyzers_results)
         
-        # Post summary first as it's the most important
+        # Post guide first to help users understand the results
         if summary_result.success and summary_result.slack_blocks:
             slack_post_json(
                 "https://slack.com/api/chat.postMessage",
                 {
                     "channel": channel,
                     "thread_ts": thread_ts,
-                    "text": "Executive Summary",
+                    "text": "Analysis Guide",
                     "blocks": summary_result.slack_blocks,
                 },
             )

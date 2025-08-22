@@ -1,205 +1,144 @@
 """
-Summary analyzer that provides executive summary and risk assessment
+Summary analyzer that provides educational overview of analysis modules
 """
 from typing import Dict, List, Optional
 from .base import BaseAnalyzer, AnalysisResult
 
 class SummaryAnalyzer(BaseAnalyzer):
-    """Generate executive summary and risk assessment"""
-    
-    def analyze_risk_indicators(self, all_results: List[AnalysisResult]) -> Dict:
-        """Analyze all results to determine risk indicators"""
-        indicators = {
-            "high_risk": [],
-            "medium_risk": [],
-            "low_risk": [],
-            "info": []
-        }
-        
-        # Check VirusTotal results
-        for result in all_results:
-            if result.analyzer_name == "VirusTotal Scanner" and result.success:
-                data = result.data
-                if data.get("found"):
-                    malicious = data.get("malicious", 0)
-                    if malicious > 5:
-                        indicators["high_risk"].append(f"🚨 {malicious} antivirus engines detected malware")
-                    elif malicious > 0:
-                        indicators["medium_risk"].append(f"⚠️ {malicious} antivirus engines flagged as suspicious")
-                else:
-                    indicators["info"].append("📝 File not previously analyzed by VirusTotal")
-        
-        # Check entropy results
-        for result in all_results:
-            if result.analyzer_name == "Entropy Scanner" and result.success:
-                data = result.data
-                entropy = data.get("overall_entropy", 0)
-                if entropy > 7.8:
-                    indicators["high_risk"].append("🔒 Very high entropy suggests encryption/packing")
-                elif entropy > 7.2:
-                    indicators["medium_risk"].append("📦 High entropy indicates compression/obfuscation")
-                
-                suspicious_sections = data.get("suspicious_sections", 0)
-                if suspicious_sections > 3:
-                    indicators["medium_risk"].append(f"🔍 {suspicious_sections} sections with suspicious entropy")
-        
-        # Check strings results
-        for result in all_results:
-            if result.analyzer_name == "Strings Extractor" and result.success:
-                data = result.data
-                interesting = data.get("interesting", {})
-                
-                if len(interesting.get("suspicious", [])) > 10:
-                    indicators["high_risk"].append(f"⚠️ {len(interesting['suspicious'])} suspicious strings detected")
-                elif len(interesting.get("suspicious", [])) > 5:
-                    indicators["medium_risk"].append(f"⚠️ {len(interesting['suspicious'])} potentially suspicious strings")
-                
-                if interesting.get("ips", []):
-                    indicators["medium_risk"].append(f"🔢 Contains {len(interesting['ips'])} IP addresses")
-                
-                if interesting.get("urls", []):
-                    indicators["info"].append(f"🌐 Contains {len(interesting['urls'])} URLs")
-        
-        # Check headers results
-        for result in all_results:
-            if "Headers Inspector" in result.analyzer_name and result.success:
-                data = result.data
-                
-                # Check for suspicious sections/imports
-                if data.get("suspicious_sections"):
-                    indicators["medium_risk"].append(f"📦 Suspicious sections: {', '.join(data['suspicious_sections'][:3])}")
-                
-                if data.get("suspicious_imports"):
-                    indicators["medium_risk"].append(f"📚 Suspicious imports detected")
-                
-                # Check security features
-                if data.get("dll_characteristics"):
-                    has_aslr = "DYNAMIC_BASE" in data["dll_characteristics"]
-                    has_dep = "NX_COMPAT" in data["dll_characteristics"]
-                    if not has_aslr and not has_dep:
-                        indicators["low_risk"].append("🛡️ Missing modern security features")
-                
-                if data.get("security"):
-                    sec = data["security"]
-                    if not sec.get("nx") and not sec.get("pie"):
-                        indicators["low_risk"].append("🛡️ No exploit mitigation features enabled")
-        
-        return indicators
-    
-    def generate_risk_score(self, indicators: Dict) -> tuple:
-        """Calculate overall risk score and level"""
-        score = 0
-        score += len(indicators["high_risk"]) * 30
-        score += len(indicators["medium_risk"]) * 15
-        score += len(indicators["low_risk"]) * 5
-        
-        if score >= 60:
-            return score, "HIGH", "🔴"
-        elif score >= 30:
-            return score, "MEDIUM", "🟡"
-        elif score >= 10:
-            return score, "LOW", "🟢"
-        else:
-            return score, "MINIMAL", "⚪"
-    
-    def generate_recommendation(self, risk_level: str, indicators: Dict) -> str:
-        """Generate actionable recommendation based on risk"""
-        if risk_level == "HIGH":
-            return "🚨 *Immediate Action Required:* This file shows multiple high-risk indicators. Do not execute. Consider quarantine and deeper analysis."
-        elif risk_level == "MEDIUM":
-            return "⚠️ *Caution Advised:* This file has suspicious characteristics. Verify source and scan with additional tools before use."
-        elif risk_level == "LOW":
-            return "🟢 *Low Risk:* File appears relatively safe but maintain standard precautions."
-        else:
-            return "⚪ *Minimal Risk:* No significant threats detected. Standard security practices apply."
+    """Generate educational summary explaining what each analyzer does"""
     
     def analyze(self, file_path: str, all_results: Optional[List[AnalysisResult]] = None, **kwargs) -> AnalysisResult:
-        """Generate executive summary from all analysis results"""
-        
-        if not all_results:
-            # Can't generate summary without other results
-            return AnalysisResult(
-                analyzer_name="Executive Summary",
-                success=False,
-                error="No analysis results available for summary"
-            )
+        """Generate educational summary explaining the analysis"""
         
         # Get file info
         file_name = file_path.split("/")[-1] if "/" in file_path else file_path
         
-        # Analyze risk indicators
-        indicators = self.analyze_risk_indicators(all_results)
-        risk_score, risk_level, risk_emoji = self.generate_risk_score(indicators)
-        recommendation = self.generate_recommendation(risk_level, indicators)
-        
-        # Build summary blocks
+        # Build educational summary blocks
         blocks = []
         
-        # Header with risk level
+        # Header
         blocks.append({
             "type": "header",
-            "text": {"type": "plain_text", "text": f"{risk_emoji} Executive Summary: {risk_level} RISK"}
+            "text": {"type": "plain_text", "text": f"📋 Analysis Guide for {file_name}"}
         })
         
-        # What does this mean section
+        # Introduction
         blocks.append({
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "*🎯 What This Means To You:*\n" + recommendation
+                "text": "*Understanding Your Analysis Results*\n\nThis file has been analyzed by multiple security modules. Here's what each section means:"
             }
         })
         
-        # Key findings
-        if any(indicators.values()):
-            blocks.append({"type": "divider"})
-            blocks.append({
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": "*🔍 Key Findings:*"}
-            })
-            
-            # High risk indicators
-            if indicators["high_risk"]:
-                findings_text = "\n".join(indicators["high_risk"][:3])
-                blocks.append({
-                    "type": "section",
-                    "text": {"type": "mrkdwn", "text": f"*Critical Issues:*\n{findings_text}"}
-                })
-            
-            # Medium risk indicators
-            if indicators["medium_risk"]:
-                findings_text = "\n".join(indicators["medium_risk"][:3])
-                blocks.append({
-                    "type": "section",
-                    "text": {"type": "mrkdwn", "text": f"*Warnings:*\n{findings_text}"}
-                })
-            
-            # Low risk indicators
-            if indicators["low_risk"] and not indicators["high_risk"]:
-                findings_text = "\n".join(indicators["low_risk"][:2])
-                blocks.append({
-                    "type": "context",
-                    "elements": [{"type": "mrkdwn", "text": f"*Minor Issues:* {findings_text}"}]
-                })
-        
-        # Quick stats
-        total_issues = sum(len(v) for v in indicators.values())
         blocks.append({"type": "divider"})
+        
+        # Explain each analyzer
+        analyzer_explanations = {
+            "Hash Calculator": {
+                "emoji": "🔐",
+                "description": "Cryptographic fingerprints that uniquely identify this file",
+                "what_to_look_for": "Use these hashes to check if the file matches known samples or to track file modifications"
+            },
+            "VirusTotal Scanner": {
+                "emoji": "🛡️",
+                "description": "Cross-references the file against 70+ antivirus engines",
+                "what_to_look_for": "Detection ratio shows how many engines flagged the file as malicious"
+            },
+            "Heatmap Generator": {
+                "emoji": "🗺️",
+                "description": "Visual fingerprint showing byte-pair frequency patterns",
+                "what_to_look_for": "Dark areas indicate unused byte combinations, bright spots show common patterns, diagonal lines suggest sequential data"
+            },
+            "Entropy Scanner": {
+                "emoji": "📊",
+                "description": "Measures randomness in the file (0-8 scale)",
+                "what_to_look_for": "High entropy (>7.5) suggests encryption/packing, low entropy (<3) indicates text/structured data"
+            },
+            "Headers Inspector": {
+                "emoji": "📦",
+                "description": "Analyzes binary structure (PE/ELF/Mach-O)",
+                "what_to_look_for": "Imports show external functions used, sections reveal code organization, security features indicate exploit mitigations"
+            },
+            "Strings Extractor": {
+                "emoji": "🔤",
+                "description": "Extracts readable text from the binary",
+                "what_to_look_for": "URLs may indicate network activity, paths reveal file operations, suspicious keywords suggest malicious behavior"
+            }
+        }
+        
+        # Add explanation for each analyzer that was run
+        if all_results:
+            for result in all_results:
+                analyzer_name = result.analyzer_name
+                # Clean up analyzer names
+                if "Headers Inspector" in analyzer_name:
+                    analyzer_name = "Headers Inspector"
+                elif "Entropy Scanner" in analyzer_name:
+                    analyzer_name = "Entropy Scanner"
+                elif "Strings Extractor" in analyzer_name:
+                    analyzer_name = "Strings Extractor"
+                
+                if analyzer_name in analyzer_explanations:
+                    info = analyzer_explanations[analyzer_name]
+                    blocks.append({
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": f"{info['emoji']} *{analyzer_name}*\n_{info['description']}_"
+                        }
+                    })
+                    blocks.append({
+                        "type": "context",
+                        "elements": [{
+                            "type": "mrkdwn",
+                            "text": f"💡 *What to look for:* {info['what_to_look_for']}"
+                        }]
+                    })
+        
+        blocks.append({"type": "divider"})
+        
+        # How to interpret results
         blocks.append({
-            "type": "context",
-            "elements": [
-                {"type": "mrkdwn", "text": f"Risk Score: {risk_score} | Total Issues: {total_issues} | Modules Run: {len(all_results)}"}
-            ]
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "*📖 Reading the Results*"
+            }
         })
         
+        interpretation_guide = [
+            "• **Paths & URLs**: Check if they point to legitimate services or suspicious domains",
+            "• **Crypto Indicators**: Terms like 'privatekey', 'SSL', 'cipher' show cryptographic operations",
+            "• **Suspicious Strings**: Keywords like 'password', 'authentication', 'download' may indicate sensitive operations",
+            "• **Entropy Levels**: Compare file entropy with section entropy to spot packed/encrypted regions",
+            "• **Binary Headers**: Look for unusual imports, missing security features, or suspicious section names"
+        ]
+        
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "\n".join(interpretation_guide)
+            }
+        })
+        
+        # Footer with module count
+        if all_results:
+            blocks.append({
+                "type": "context",
+                "elements": [{
+                    "type": "mrkdwn",
+                    "text": f"✅ Analysis complete • {len(all_results)} modules processed • Review each section below for details"
+                }]
+            })
+        
         return AnalysisResult(
-            analyzer_name="Executive Summary",
+            analyzer_name="Analysis Guide",
             success=True,
             data={
-                "risk_level": risk_level,
-                "risk_score": risk_score,
-                "indicators": indicators,
-                "recommendation": recommendation
+                "file_name": file_name,
+                "modules_run": len(all_results) if all_results else 0
             },
             slack_blocks=blocks
         )

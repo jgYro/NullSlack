@@ -135,33 +135,22 @@ class StringsAnalyzer(BaseAnalyzer):
                     }
                     emoji = emoji_map.get(category, "•")
                     
-                    # Show more items with "See more/less" style formatting
-                    display_limit = 10 if category in ["suspicious", "crypto", "urls", "paths"] else 5
-                    shown_items = items[:display_limit]
-                    hidden_count = len(items) - display_limit
-                    
-                    # Format items for display with proper truncation
+                    # Show ALL items without truncation
                     items_text = "\n".join([
-                        f"• `{item if len(item) <= 80 else item[:80] + '...'}`" 
-                        for item in shown_items
+                        f"• `{item}`" 
+                        for item in items
                     ])
-                    
-                    # Add count if there are more items
-                    if hidden_count > 0:
-                        items_text += f"\n_...and {hidden_count} more_"
                     
                     blocks.append({
                         "type": "section",
                         "text": {"type": "mrkdwn", "text": f"{emoji} *{category.title()}* ({len(items)} found)\n{items_text}"}
                     })
         
-        # Sample strings
-        if strings["ascii"]:
-            sample = strings["ascii"][:5]
-            sample_text = "\n".join([f"• `{s[:40]}{'...' if len(s) > 40 else ''}`" for s in sample])
+        # Show total counts as context
+        if strings["ascii"] or strings["utf16le"]:
             blocks.append({
                 "type": "context",
-                "elements": [{"type": "mrkdwn", "text": f"*Sample ASCII:*\n{sample_text}"}]
+                "elements": [{"type": "mrkdwn", "text": f"📊 *Total extracted:* {total_ascii} ASCII strings, {total_utf16} UTF-16LE strings"}]
             })
         
         return AnalysisResult(
