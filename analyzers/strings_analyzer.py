@@ -3,7 +3,9 @@ Strings extraction analyzer
 Extracts ASCII and UTF-16LE strings from binary files
 """
 import re
-from typing import List, Dict
+import json
+import os
+from typing import List, Dict, Optional
 from .base import BaseAnalyzer, AnalysisResult
 
 class StringsAnalyzer(BaseAnalyzer):
@@ -90,7 +92,13 @@ class StringsAnalyzer(BaseAnalyzer):
         # Remove empty categories (but don't limit results yet)
         return {k: v for k, v in interesting.items() if v}
     
-    def analyze(self, file_path: str, **kwargs) -> AnalysisResult:
+    def save_to_json(self, data: Dict, output_path: str) -> str:
+        """Save strings data to JSON file"""
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        return output_path
+    
+    def analyze(self, file_path: str, output_dir: Optional[str] = "/tmp", **kwargs) -> AnalysisResult:
         """Analyze strings in the file"""
         with open(file_path, "rb") as f:
             data = f.read()
@@ -105,7 +113,28 @@ class StringsAnalyzer(BaseAnalyzer):
         total_ascii = len(strings["ascii"])
         total_utf16 = len(strings["utf16le"])
         
-        # Build Slack blocks
+        # Save all strings to JSON file
+        json_data = {
+            "file": os.path.basename(file_path),
+            "statistics": {
+                "total_ascii": total_ascii,
+                "total_utf16": total_utf16,
+                "total_strings": total_ascii + total_utf16
+            },
+            "extracted_strings": {
+                "ascii": strings["ascii"],
+                "utf16le": strings["utf16le"]
+            },
+            "categorized_findings": interesting
+        }
+        
+        # Generate output filename
+        import hashlib
+        file_hash = hashlib.md5(file_path.encode()).hexdigest()[:8]
+        json_output_path = os.path.join(output_dir, f"strings_{file_hash}.json")
+        self.save_to_json(json_data, json_output_path)
+        
+        # Build Slack blocks with summary only
         blocks = []
         
         # Header
@@ -113,52 +142,19 @@ class StringsAnalyzer(BaseAnalyzer):
             "type": "section",
             "text": {"type": "mrkdwn", "text": "*Strings Analysis*"},
             "fields": [
-                {"type": "mrkdwn", "text": f"*ASCII strings:*\n{total_ascii}"},
-                {"type": "mrkdwn", "text": f"*UTF-16 strings:*\n{total_utf16}"}
+                {"type": "mrkdwn", "text": f"*Total Extracted:*\n{total_ascii + total_utf16} strings"},
+                {"type": "mrkdwn", "text": f"*ASCII:*\n{total_ascii}"},
+                {"type": "mrkdwn", "text": f"*UTF-16LE:*\n{total_utf16}"},
+                {"type": "mrkdwn", "text": f"*Output:*\nJSON file"}
             ]
         })
         
-        # Show ALL extracted strings first
-        if strings["ascii"]:
-            blocks.append({"type": "divider"})
-            blocks.append({
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": f"*All ASCII Strings ({len(strings['ascii'])} found)*"}
-            })
-            # Display all ASCII strings
-            ascii_text = "\n".join([f"• `{s}`" for s in strings["ascii"]])
-            blocks.append({
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": ascii_text[:3000]}  # Slack has a 3000 char limit per block
-            })
-            if len(ascii_text) > 3000:
-                # Continue in additional blocks if needed
-                remaining = ascii_text[3000:]
-                while remaining:
-                    blocks.append({
-                        "type": "section",
-                        "text": {"type": "mrkdwn", "text": remaining[:3000]}
-                    })
-                    remaining = remaining[3000:]
-        
-        if strings["utf16le"]:
-            blocks.append({"type": "divider"})
-            blocks.append({
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": f"*All UTF-16LE Strings ({len(strings['utf16le'])} found)*"}
-            })
-            utf16_text = "\n".join([f"• `{s}`" for s in strings["utf16le"]])
-            blocks.append({
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": utf16_text[:3000]}
-            })
-        
-        # Categorized findings
+        # Show categorized summary if interesting findings exist
         if interesting:
             blocks.append({"type": "divider"})
             blocks.append({
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": "*Categorized Findings*"}
+                "text": {"type": "mrkdwn", "text": "*Categorized Findings Summary*"}
             })
             
             category_labels = {
@@ -171,24 +167,32 @@ class StringsAnalyzer(BaseAnalyzer):
                 "suspicious": "Suspicious Keywords"
             }
             
+            summary_fields = []
             for category, items in interesting.items():
                 if items:
                     label = category_labels.get(category, category.title())
-                    
-                    # Show ALL items without truncation
-                    items_text = "\n".join([f"• `{item}`" for item in items])
-                    
-                    blocks.append({
-                        "type": "section",
-                        "text": {"type": "mrkdwn", "text": f"*{label}* ({len(items)} found)\n{items_text[:3000]}"}
+                    summary_fields.append({
+                        "type": "mrkdwn", 
+                        "text": f"*{label}:*\n{len(items)} found"
                     })
+            
+            # Add fields in pairs (Slack likes 2 columns)
+            while summary_fields:
+                field_pair = summary_fields[:2]
+                summary_fields = summary_fields[2:]
+                blocks.append({
+                    "type": "section",
+                    "fields": field_pair
+                })
         
-        # Summary statistics
-        if strings["ascii"] or strings["utf16le"]:
-            blocks.append({
-                "type": "context",
-                "elements": [{"type": "mrkdwn", "text": f"*Total extracted:* {total_ascii} ASCII strings, {total_utf16} UTF-16LE strings"}]
-            })
+        # Add note about JSON file
+        blocks.append({
+            "type": "context",
+            "elements": [{
+                "type": "mrkdwn", 
+                "text": "Full strings data saved to JSON file. File will be uploaded separately for download."
+            }]
+        })
         
         return AnalysisResult(
             analyzer_name="Strings Extractor",
@@ -197,7 +201,8 @@ class StringsAnalyzer(BaseAnalyzer):
                 "total_strings": total_ascii + total_utf16,
                 "ascii_count": total_ascii,
                 "utf16_count": total_utf16,
-                "interesting": interesting
+                "interesting": interesting,
+                "json_output_path": json_output_path
             },
             slack_blocks=blocks
         )

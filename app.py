@@ -233,8 +233,23 @@ def process_file_async(file_obj: dict, channel: str, thread_ts: str, user_id: st
 
         # 6. Strings analysis
         strings_analyzer = StringsAnalyzer(min_length=5)
-        strings_result = strings_analyzer.safe_analyze(local)
+        strings_result = strings_analyzer.safe_analyze(local, output_dir="/tmp")
         analyzers_results.append(strings_result)
+        
+        # Upload strings JSON file if it was created
+        if strings_result.success and "json_output_path" in strings_result.data:
+            json_path = strings_result.data["json_output_path"]
+            try:
+                response = slack_client.files_upload_v2(
+                    channel=channel,
+                    file=json_path,
+                    title=f"Strings Analysis - {name}",
+                    initial_comment=f"Extracted strings data for {name}",
+                    thread_ts=thread_ts,
+                )
+                app.logger.info(f"Strings JSON uploaded: {response.get('file', {}).get('id')}")
+            except Exception as e:
+                app.logger.error(f"Failed to upload strings JSON: {e}")
 
         # Generate analysis guide (post this first)
         summary_analyzer = SummaryAnalyzer()
@@ -259,9 +274,15 @@ def process_file_async(file_obj: dict, channel: str, thread_ts: str, user_id: st
         # Clean up temporary files
         try:
             os.remove(local)
-            os.remove(png_out)
-        except:
-            pass
+            if os.path.exists(png_out):
+                os.remove(png_out)
+            # Clean up JSON file if it exists
+            if strings_result.success and "json_output_path" in strings_result.data:
+                json_path = strings_result.data["json_output_path"]
+                if os.path.exists(json_path):
+                    os.remove(json_path)
+        except Exception as e:
+            app.logger.error(f"Cleanup error: {e}")
 
     except Exception as e:
         try:
