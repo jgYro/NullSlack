@@ -10,6 +10,7 @@ from .entropy_analyzer import EntropyAnalyzer
 from .hash_analyzer import HashAnalyzer
 from .virustotal_analyzer import VirusTotalAnalyzer
 from .heatmap_analyzer import HeatmapAnalyzer
+from .summary_analyzer import SummaryAnalyzer
 
 __all__ = [
     'BaseAnalyzer',
@@ -19,5 +20,6 @@ __all__ = [
     'EntropyAnalyzer',
     'HashAnalyzer',
     'VirusTotalAnalyzer',
-    'HeatmapAnalyzer'
+    'HeatmapAnalyzer',
+    'SummaryAnalyzer'
 ]

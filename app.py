@@ -12,6 +12,7 @@ from analyzers import (
     StringsAnalyzer,
     HeadersAnalyzer,
     EntropyAnalyzer,
+    SummaryAnalyzer,
 )
 
 # ====== CONFIG ======
@@ -235,57 +236,23 @@ def process_file_async(file_obj: dict, channel: str, thread_ts: str, user_id: st
         strings_result = strings_analyzer.safe_analyze(local)
         analyzers_results.append(strings_result)
 
-        # Generate summary based on results
-        threat_level = "Unknown"
-        threat_emoji = "❓"
-
-        if vt_result.success and vt_result.data.get("found"):
-            malicious = vt_result.data.get("malicious", 0)
-            if malicious == 0:
-                threat_level, threat_emoji = "Clean", "✅"
-            elif malicious <= 3:
-                threat_level, threat_emoji = "Suspicious", "⚠️"
-            else:
-                threat_level, threat_emoji = "Malicious", "🚨"
-
-        # Build summary message
-        summary_blocks = [
-            {
-                "type": "header",
-                "text": {
-                    "type": "plain_text",
-                    "text": f"{threat_emoji} Analysis Complete: {name}",
+        # Generate executive summary (post this first)
+        summary_analyzer = SummaryAnalyzer()
+        summary_result = summary_analyzer.safe_analyze(local, all_results=analyzers_results)
+        
+        # Post summary first as it's the most important
+        if summary_result.success and summary_result.slack_blocks:
+            slack_post_json(
+                "https://slack.com/api/chat.postMessage",
+                {
+                    "channel": channel,
+                    "thread_ts": thread_ts,
+                    "text": "Executive Summary",
+                    "blocks": summary_result.slack_blocks,
                 },
-            },
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"*File:* `{name}`\n*Size:* {file_size:,} bytes\n*Status:* {threat_level}",
-                },
-            },
-            {
-                "type": "context",
-                "elements": [
-                    {
-                        "type": "mrkdwn",
-                        "text": f"Analyzed by <@{user_id}> • {len(analyzers_results)} modules completed",
-                    }
-                ],
-            },
-        ]
-
-        # Post summary
-        slack_post_json(
-            "https://slack.com/api/chat.postMessage",
-            {
-                "channel": channel,
-                "thread_ts": thread_ts,
-                "text": f"Analysis complete: {name} - {threat_emoji} {threat_level}",
-                "blocks": summary_blocks,
-            },
-        )
-
+            )
+            time.sleep(0.5)
+        
         # Post individual analyzer results
         post_analyzer_results(channel, thread_ts, analyzers_results)
 

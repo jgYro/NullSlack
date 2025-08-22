@@ -61,8 +61,10 @@ class StringsAnalyzer(BaseAnalyzer):
             if re.search(r"https?://", s, re.IGNORECASE):
                 interesting["urls"].append(s)
             
-            # File paths
-            if re.search(r"[C-Z]:\\|\/[a-z]+\/", s):
+            # File paths (Windows or Unix-like)
+            if re.search(r"[C-Z]:\\|\/usr\/|\/opt\/|\/etc\/|\/var\/|\/home\/|\/lib\/|\/bin\/", s):
+                interesting["paths"].append(s)
+            elif re.search(r"\.dll$|\.exe$|\.dylib$|\.so$|\.sys$", s, re.IGNORECASE):
                 interesting["paths"].append(s)
             
             # Emails
@@ -82,11 +84,11 @@ class StringsAnalyzer(BaseAnalyzer):
                 interesting["crypto"].append(s)
             
             # Suspicious keywords
-            if re.search(r"password|admin|root|cmd\.exe|powershell|download|upload|inject|hook|patch", s, re.IGNORECASE):
+            if re.search(r"password|admin|root|cmd\.exe|powershell|download|upload|inject|hook|patch|askpassword|ftppassword|authentication", s, re.IGNORECASE):
                 interesting["suspicious"].append(s)
         
-        # Remove empty categories and limit results
-        return {k: v[:10] for k, v in interesting.items() if v}
+        # Remove empty categories (but don't limit results yet)
+        return {k: v for k, v in interesting.items() if v}
     
     def analyze(self, file_path: str, **kwargs) -> AnalysisResult:
         """Analyze strings in the file"""
@@ -133,8 +135,20 @@ class StringsAnalyzer(BaseAnalyzer):
                     }
                     emoji = emoji_map.get(category, "•")
                     
-                    # Format items for display
-                    items_text = "\n".join([f"• `{item[:50]}{'...' if len(item) > 50 else ''}`" for item in items[:5]])
+                    # Show more items with "See more/less" style formatting
+                    display_limit = 10 if category in ["suspicious", "crypto", "urls", "paths"] else 5
+                    shown_items = items[:display_limit]
+                    hidden_count = len(items) - display_limit
+                    
+                    # Format items for display with proper truncation
+                    items_text = "\n".join([
+                        f"• `{item if len(item) <= 80 else item[:80] + '...'}`" 
+                        for item in shown_items
+                    ])
+                    
+                    # Add count if there are more items
+                    if hidden_count > 0:
+                        items_text += f"\n_...and {hidden_count} more_"
                     
                     blocks.append({
                         "type": "section",
