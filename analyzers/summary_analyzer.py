@@ -19,7 +19,7 @@ class SummaryAnalyzer(BaseAnalyzer):
         # Header
         blocks.append({
             "type": "header",
-            "text": {"type": "plain_text", "text": f"📋 Analysis Guide for {file_name}"}
+            "text": {"type": "plain_text", "text": f"Binary Analysis Report: {file_name}"}
         })
         
         # Introduction
@@ -27,7 +27,7 @@ class SummaryAnalyzer(BaseAnalyzer):
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "*Understanding Your Analysis Results*\n\nThis file has been analyzed by multiple security modules. Here's what each section means:"
+                "text": "*Analysis Components*\n\nThe following security modules have been applied to analyze this file:"
             }
         })
         
@@ -36,34 +36,28 @@ class SummaryAnalyzer(BaseAnalyzer):
         # Explain each analyzer
         analyzer_explanations = {
             "Hash Calculator": {
-                "emoji": "🔐",
-                "description": "Cryptographic fingerprints that uniquely identify this file",
-                "what_to_look_for": "Use these hashes to check if the file matches known samples or to track file modifications"
+                "description": "Generates cryptographic fingerprints (SHA256, MD5, SHA1) that uniquely identify this file",
+                "purpose": "File identification and integrity verification"
             },
             "VirusTotal Scanner": {
-                "emoji": "🛡️",
-                "description": "Cross-references the file against 70+ antivirus engines",
-                "what_to_look_for": "Detection ratio shows how many engines flagged the file as malicious"
+                "description": "Queries VirusTotal database to check if this file hash has been previously analyzed",
+                "purpose": "Detection ratio from 70+ antivirus engines"
             },
             "Heatmap Generator": {
-                "emoji": "🗺️",
-                "description": "Visual fingerprint showing byte-pair frequency patterns",
-                "what_to_look_for": "Dark areas indicate unused byte combinations, bright spots show common patterns, diagonal lines suggest sequential data"
+                "description": "Creates a visual representation of byte-pair frequency distribution",
+                "purpose": "Pattern recognition and structural analysis"
             },
             "Entropy Scanner": {
-                "emoji": "📊",
-                "description": "Measures randomness in the file (0-8 scale)",
-                "what_to_look_for": "High entropy (>7.5) suggests encryption/packing, low entropy (<3) indicates text/structured data"
+                "description": "Calculates Shannon entropy to measure data randomness (scale: 0-8 bits)",
+                "purpose": "Detection of encryption, compression, or packing"
             },
             "Headers Inspector": {
-                "emoji": "📦",
-                "description": "Analyzes binary structure (PE/ELF/Mach-O)",
-                "what_to_look_for": "Imports show external functions used, sections reveal code organization, security features indicate exploit mitigations"
+                "description": "Parses executable headers to extract structural information",
+                "purpose": "Binary format analysis, import/export tables, section mapping"
             },
             "Strings Extractor": {
-                "emoji": "🔤",
-                "description": "Extracts readable text from the binary",
-                "what_to_look_for": "URLs may indicate network activity, paths reveal file operations, suspicious keywords suggest malicious behavior"
+                "description": "Extracts human-readable ASCII and UTF-16 strings from binary data",
+                "purpose": "Identification of embedded text, URLs, file paths, and keywords"
             }
         }
         
@@ -85,15 +79,8 @@ class SummaryAnalyzer(BaseAnalyzer):
                         "type": "section",
                         "text": {
                             "type": "mrkdwn",
-                            "text": f"{info['emoji']} *{analyzer_name}*\n_{info['description']}_"
+                            "text": f"*{analyzer_name}*\n{info['description']}\n_Purpose: {info['purpose']}_"
                         }
-                    })
-                    blocks.append({
-                        "type": "context",
-                        "elements": [{
-                            "type": "mrkdwn",
-                            "text": f"💡 *What to look for:* {info['what_to_look_for']}"
-                        }]
                     })
         
         blocks.append({"type": "divider"})
@@ -103,16 +90,16 @@ class SummaryAnalyzer(BaseAnalyzer):
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "*📖 Reading the Results*"
+                "text": "*Interpretation Guidelines*"
             }
         })
         
         interpretation_guide = [
-            "• **Paths & URLs**: Check if they point to legitimate services or suspicious domains",
-            "• **Crypto Indicators**: Terms like 'privatekey', 'SSL', 'cipher' show cryptographic operations",
-            "• **Suspicious Strings**: Keywords like 'password', 'authentication', 'download' may indicate sensitive operations",
-            "• **Entropy Levels**: Compare file entropy with section entropy to spot packed/encrypted regions",
-            "• **Binary Headers**: Look for unusual imports, missing security features, or suspicious section names"
+            "• *File Paths and URLs:* Verify legitimacy of referenced network endpoints and file system locations",
+            "• *Cryptographic Indicators:* Presence of encryption-related terms indicates cryptographic operations or key material",
+            "• *Authentication Keywords:* Terms related to passwords and authentication warrant additional scrutiny",
+            "• *Entropy Analysis:* Values above 7.5 typically indicate encryption or compression; compare with section-level entropy",
+            "• *Binary Structure:* Review imported libraries, exported functions, and section characteristics for anomalies"
         ]
         
         blocks.append({
@@ -129,7 +116,7 @@ class SummaryAnalyzer(BaseAnalyzer):
                 "type": "context",
                 "elements": [{
                     "type": "mrkdwn",
-                    "text": f"✅ Analysis complete • {len(all_results)} modules processed • Review each section below for details"
+                    "text": f"Analysis complete. {len(all_results)} modules processed. Detailed results follow below."
                 }]
             })
         

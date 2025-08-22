@@ -75,34 +75,31 @@ class VirusTotalAnalyzer(BaseAnalyzer):
         if vt_result.get("error"):
             blocks.append({
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": f"🛡️ *VirusTotal Analysis*\n⚠️ {vt_result['error']}"}
+                "text": {"type": "mrkdwn", "text": f"*VirusTotal Analysis*\nError: {vt_result['error']}"}
             })
         elif not vt_result.get("found"):
             blocks.append({
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": "🛡️ *VirusTotal Analysis*\n❓ File not found in database (first time submission)"}
+                "text": {"type": "mrkdwn", "text": "*VirusTotal Analysis*\nFile not found in VirusTotal database. No previous analysis available."}
             })
         else:
             # Determine threat level
             malicious_count = vt_result.get("malicious", 0)
             if malicious_count == 0:
-                threat_emoji = "✅"
-                threat_text = "Clean"
+                threat_text = "No detections"
             elif malicious_count <= 3:
-                threat_emoji = "⚠️"
-                threat_text = "Suspicious"
+                threat_text = "Low detection count"
             else:
-                threat_emoji = "🚨"
-                threat_text = "Malicious"
+                threat_text = "Multiple detections"
             
             blocks.append({
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": f"🛡️ *VirusTotal Analysis* {threat_emoji}"},
+                "text": {"type": "mrkdwn", "text": "*VirusTotal Analysis*"},
                 "fields": [
                     {"type": "mrkdwn", "text": f"*Status:*\n{threat_text}"},
-                    {"type": "mrkdwn", "text": f"*Detection:*\n{vt_result['detection_ratio']}"},
-                    {"type": "mrkdwn", "text": f"*Malicious:*\n{vt_result['malicious']} engines"},
-                    {"type": "mrkdwn", "text": f"*Suspicious:*\n{vt_result['suspicious']} engines"}
+                    {"type": "mrkdwn", "text": f"*Detection Ratio:*\n{vt_result['detection_ratio']}"},
+                    {"type": "mrkdwn", "text": f"*Malicious Detections:*\n{vt_result['malicious']} engines"},
+                    {"type": "mrkdwn", "text": f"*Suspicious Detections:*\n{vt_result['suspicious']} engines"}
                 ]
             })
             

@@ -34,7 +34,7 @@ class HashAnalyzer(BaseAnalyzer):
         # Build Slack blocks
         blocks = [{
             "type": "section",
-            "text": {"type": "mrkdwn", "text": "🔐 *File Hashes*"},
+            "text": {"type": "mrkdwn", "text": "*Cryptographic Hashes*"},
             "fields": [
                 {"type": "mrkdwn", "text": f"*SHA256:*\n`{hashes['sha256']}`"},
                 {"type": "mrkdwn", "text": f"*MD5:*\n`{hashes['md5']}`"}

@@ -111,46 +111,83 @@ class StringsAnalyzer(BaseAnalyzer):
         # Header
         blocks.append({
             "type": "section",
-            "text": {"type": "mrkdwn", "text": "🔤 *Strings Analysis*"},
+            "text": {"type": "mrkdwn", "text": "*Strings Analysis*"},
             "fields": [
                 {"type": "mrkdwn", "text": f"*ASCII strings:*\n{total_ascii}"},
                 {"type": "mrkdwn", "text": f"*UTF-16 strings:*\n{total_utf16}"}
             ]
         })
         
-        # Interesting findings
+        # Show ALL extracted strings first
+        if strings["ascii"]:
+            blocks.append({"type": "divider"})
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"*All ASCII Strings ({len(strings['ascii'])} found)*"}
+            })
+            # Display all ASCII strings
+            ascii_text = "\n".join([f"• `{s}`" for s in strings["ascii"]])
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": ascii_text[:3000]}  # Slack has a 3000 char limit per block
+            })
+            if len(ascii_text) > 3000:
+                # Continue in additional blocks if needed
+                remaining = ascii_text[3000:]
+                while remaining:
+                    blocks.append({
+                        "type": "section",
+                        "text": {"type": "mrkdwn", "text": remaining[:3000]}
+                    })
+                    remaining = remaining[3000:]
+        
+        if strings["utf16le"]:
+            blocks.append({"type": "divider"})
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"*All UTF-16LE Strings ({len(strings['utf16le'])} found)*"}
+            })
+            utf16_text = "\n".join([f"• `{s}`" for s in strings["utf16le"]])
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": utf16_text[:3000]}
+            })
+        
+        # Categorized findings
         if interesting:
             blocks.append({"type": "divider"})
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": "*Categorized Findings*"}
+            })
+            
+            category_labels = {
+                "urls": "URLs",
+                "paths": "File Paths", 
+                "emails": "Email Addresses",
+                "ips": "IP Addresses",
+                "registry": "Registry Keys",
+                "crypto": "Cryptographic Terms",
+                "suspicious": "Suspicious Keywords"
+            }
             
             for category, items in interesting.items():
                 if items:
-                    emoji_map = {
-                        "urls": "🌐",
-                        "paths": "📁", 
-                        "emails": "📧",
-                        "ips": "🔢",
-                        "registry": "🔧",
-                        "crypto": "🔐",
-                        "suspicious": "⚠️"
-                    }
-                    emoji = emoji_map.get(category, "•")
+                    label = category_labels.get(category, category.title())
                     
                     # Show ALL items without truncation
-                    items_text = "\n".join([
-                        f"• `{item}`" 
-                        for item in items
-                    ])
+                    items_text = "\n".join([f"• `{item}`" for item in items])
                     
                     blocks.append({
                         "type": "section",
-                        "text": {"type": "mrkdwn", "text": f"{emoji} *{category.title()}* ({len(items)} found)\n{items_text}"}
+                        "text": {"type": "mrkdwn", "text": f"*{label}* ({len(items)} found)\n{items_text[:3000]}"}
                     })
         
-        # Show total counts as context
+        # Summary statistics
         if strings["ascii"] or strings["utf16le"]:
             blocks.append({
                 "type": "context",
-                "elements": [{"type": "mrkdwn", "text": f"📊 *Total extracted:* {total_ascii} ASCII strings, {total_utf16} UTF-16LE strings"}]
+                "elements": [{"type": "mrkdwn", "text": f"*Total extracted:* {total_ascii} ASCII strings, {total_utf16} UTF-16LE strings"}]
             })
         
         return AnalysisResult(
