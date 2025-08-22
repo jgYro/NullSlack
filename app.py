@@ -2,6 +2,8 @@ import os, time, hmac, hashlib, threading, json, logging, requests
 from flask import Flask, request, jsonify, make_response
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
+from dotenv import load_dotenv
+import vt
 
 # ---- Binary viz deps (headless) ----
 import numpy as np
@@ -11,9 +13,12 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
 # ====== CONFIG ======
+load_dotenv()  # Load .env file
+
 SLACK_SIGNING_SECRET = os.environ["SLACK_SIGNING_SECRET"].encode()   # from Slack
 SLACK_BOT_TOKEN      = os.environ["SLACK_BOT_TOKEN"]                 # xoxb-...
 SKIP_VERIFY          = os.getenv("SKIP_SLACK_SIGNATURE_VERIFY", "false").lower() == "true"
+VIRUSTOTAL_API_KEY   = os.getenv("VIRUSTOTAL_API_KEY")               # VT API key
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -106,6 +111,74 @@ def upload_png_and_post_inline(channel_id: str, thread_ts: str, png_path: str, t
         app.logger.error(f"Unexpected error uploading file: {e}")
         raise
 
+# ---- Security Analysis helpers ----
+def calculate_file_hashes(file_path: str) -> dict:
+    """Calculate SHA256 and MD5 hashes for a file."""
+    sha256_hash = hashlib.sha256()
+    md5_hash = hashlib.md5()
+    
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            sha256_hash.update(chunk)
+            md5_hash.update(chunk)
+    
+    return {
+        "sha256": sha256_hash.hexdigest(),
+        "md5": md5_hash.hexdigest()
+    }
+
+def calculate_entropy(file_path: str) -> float:
+    """Calculate Shannon entropy of a file (0-8 bits)."""
+    with open(file_path, "rb") as f:
+        data = f.read()
+    
+    if not data:
+        return 0.0
+    
+    # Count byte frequencies
+    freq = np.zeros(256)
+    for byte in data:
+        freq[byte] += 1
+    
+    # Calculate probabilities
+    probs = freq[freq > 0] / len(data)
+    
+    # Shannon entropy: -sum(p * log2(p))
+    entropy = -np.sum(probs * np.log2(probs))
+    
+    return round(entropy, 3)
+
+def check_virustotal(file_hash: str) -> dict:
+    """Check file hash against VirusTotal database."""
+    if not VIRUSTOTAL_API_KEY:
+        return {"error": "VirusTotal API key not configured"}
+    
+    try:
+        with vt.Client(VIRUSTOTAL_API_KEY) as client:
+            try:
+                file_obj = client.get_object(f"/files/{file_hash}")
+                stats = file_obj.last_analysis_stats
+                
+                return {
+                    "found": True,
+                    "malicious": stats.get("malicious", 0),
+                    "suspicious": stats.get("suspicious", 0),
+                    "undetected": stats.get("undetected", 0),
+                    "harmless": stats.get("harmless", 0),
+                    "total_engines": sum(stats.values()),
+                    "detection_ratio": f"{stats.get('malicious', 0)}/{sum(stats.values())}",
+                    "reputation": file_obj.reputation if hasattr(file_obj, 'reputation') else None,
+                    "names": file_obj.names[:3] if hasattr(file_obj, 'names') else [],
+                }
+            except vt.error.APIError as e:
+                if e.code == "NotFoundError":
+                    return {"found": False, "message": "File not found in VirusTotal database"}
+                else:
+                    return {"error": f"VirusTotal API error: {str(e)}"}
+    except Exception as e:
+        app.logger.error(f"VirusTotal check failed: {e}")
+        return {"error": f"Failed to check VirusTotal: {str(e)}"}
+
 # ---- Viz helpers ----
 def make_bytepair_heatmap(file_path: str, out_png: str, bins: int = 256) -> dict:
     """
@@ -174,6 +247,7 @@ def process_file_async(file_obj: dict, channel: str, thread_ts: str, user_id: st
     try:
         name = file_obj.get("name", "file.bin")
         url  = file_obj.get("url_private_download") or file_obj["url_private"]
+        file_size = file_obj.get("size", 0)
 
         try_join(channel)  # make sure we can post (public channels)
 
@@ -182,7 +256,16 @@ def process_file_async(file_obj: dict, channel: str, thread_ts: str, user_id: st
         png_out = f"/tmp/{file_obj['id']}-heatmap.png"
         download_slack_file(url, local)
 
-        # Build heatmap + dummy metrics
+        # Calculate file hashes
+        hashes = calculate_file_hashes(local)
+        
+        # Calculate entropy
+        entropy = calculate_entropy(local)
+        
+        # Check VirusTotal
+        vt_result = check_virustotal(hashes["sha256"])
+        
+        # Build heatmap + metrics
         metrics = make_bytepair_heatmap(local, png_out, bins=256)
 
         # Upload PNG - it will automatically display inline with initial_comment
@@ -193,21 +276,111 @@ def process_file_async(file_obj: dict, channel: str, thread_ts: str, user_id: st
             title=f"Byte-Pair Heatmap — {name}",
         )
 
-        # Post summary with the heatmap as an attachment block
+        # Determine threat level emoji and text
+        if vt_result.get("found"):
+            malicious_count = vt_result.get("malicious", 0)
+            if malicious_count == 0:
+                threat_emoji = "✅"
+                threat_text = "Clean"
+            elif malicious_count <= 3:
+                threat_emoji = "⚠️"
+                threat_text = "Suspicious"
+            else:
+                threat_emoji = "🚨"
+                threat_text = "Malicious"
+        else:
+            threat_emoji = "❓"
+            threat_text = "Unknown (not in VT database)"
+        
+        # Entropy analysis
+        entropy_indicator = ""
+        if entropy > 7.5:
+            entropy_indicator = " 🔒 (encrypted/packed)"
+        elif entropy > 6.5:
+            entropy_indicator = " 📦 (compressed)"
+        elif entropy < 3.0:
+            entropy_indicator = " 📝 (text/structured)"
+
+        # Build comprehensive security report
         blocks = [
-            {"type": "header", "text": {"type": "plain_text", "text": f"Analysis summary for `{name}`"}},
+            {"type": "header", "text": {"type": "plain_text", "text": f"{threat_emoji} Security Analysis: {name}"}},
+            {"type": "divider"},
+            
+            # File Info Section
             {"type": "section",
+             "text": {"type": "mrkdwn", "text": "*📄 File Information*"},
              "fields": [
-                {"type": "mrkdwn", "text": f"*Bytes:*\n{metrics['total_bytes']}"},
-                {"type": "mrkdwn", "text": f"*Unique bytes:*\n{metrics['unique_bytes']}"},
-                {"type": "mrkdwn", "text": f"*Dummy score:*\n{metrics['dummy_score']}"},
-                {"type": "mrkdwn", "text": f"*Dummy label:*\n{metrics['dummy_label']}"},
+                {"type": "mrkdwn", "text": f"*Filename:*\n`{name}`"},
+                {"type": "mrkdwn", "text": f"*Size:*\n{file_size:,} bytes"},
+                {"type": "mrkdwn", "text": f"*Entropy:*\n{entropy}/8.0{entropy_indicator}"},
+                {"type": "mrkdwn", "text": f"*Unique bytes:*\n{metrics['unique_bytes']}/256"},
              ]},
+            
+            # Hash Section
+            {"type": "section",
+             "text": {"type": "mrkdwn", "text": "*🔐 File Hashes*"},
+             "fields": [
+                {"type": "mrkdwn", "text": f"*SHA256:*\n`{hashes['sha256']}`"},
+                {"type": "mrkdwn", "text": f"*MD5:*\n`{hashes['md5']}`"},
+             ]},
+            
+            {"type": "divider"},
         ]
+        
+        # VirusTotal Results Section
+        if vt_result.get("found"):
+            vt_fields = [
+                {"type": "mrkdwn", "text": f"*Status:*\n{threat_text}"},
+                {"type": "mrkdwn", "text": f"*Detection Ratio:*\n{vt_result.get('detection_ratio', 'N/A')}"},
+                {"type": "mrkdwn", "text": f"*Malicious:*\n{vt_result.get('malicious', 0)} engines"},
+                {"type": "mrkdwn", "text": f"*Suspicious:*\n{vt_result.get('suspicious', 0)} engines"},
+            ]
+            
+            if vt_result.get('reputation') is not None:
+                vt_fields.append({"type": "mrkdwn", "text": f"*Reputation:*\n{vt_result['reputation']}"})
+            
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": "*🛡️ VirusTotal Analysis*"},
+                "fields": vt_fields
+            })
+            
+            if vt_result.get('names'):
+                blocks.append({
+                    "type": "context",
+                    "elements": [{"type": "mrkdwn", "text": f"*Known as:* {', '.join(vt_result['names'][:3])}"}]
+                })
+        elif vt_result.get("error"):
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"*🛡️ VirusTotal Analysis*\n⚠️ {vt_result['error']}"}
+            })
+        else:
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": "*🛡️ VirusTotal Analysis*\n❓ File not found in VirusTotal database (first time submission)"}
+            })
+        
+        # Summary footer
+        blocks.append({
+            "type": "context",
+            "elements": [
+                {"type": "mrkdwn", "text": f"Analyzed by <@{user_id}> • {threat_emoji} {threat_text}"}
+            ]
+        })
         
         slack_post_json("https://slack.com/api/chat.postMessage",
                        {"channel": channel, "thread_ts": thread_ts,
-                        "text": f"Analysis complete for {name}", "blocks": blocks})
+                        "text": f"Security analysis complete for {name}: {threat_emoji} {threat_text}", 
+                        "blocks": blocks})
+        
+        # Clean up temporary files
+        try:
+            os.remove(local)
+            os.remove(png_out)
+        except:
+            pass
+            
     except Exception as e:
         try:
             post_message(channel, f"⚠️ Processing failed: {e}", thread_ts)
