@@ -142,6 +142,44 @@ def post_analyzer_results(channel: str, thread_ts: str, results: list):
     for result in results:
         if result.success and result.slack_blocks:
             try:
+                # Check if this is the strings analyzer with a JSON file
+                if result.analyzer_name == "Strings Extractor" and "json_output_path" in result.data:
+                    # First upload the JSON file
+                    json_path = result.data["json_output_path"]
+                    file_upload_success = False
+                    try:
+                        upload_response = slack_client.files_upload_v2(
+                            channel=channel,
+                            file=json_path,
+                            title="Extracted Strings Data (JSON)",
+                            thread_ts=thread_ts,
+                        )
+                        file_id = upload_response.get('file', {}).get('id')
+                        file_upload_success = True
+                        app.logger.info(f"Strings JSON uploaded: {file_id}")
+                        
+                        # Add a note about the uploaded file to the blocks
+                        result.slack_blocks.append({
+                            "type": "divider"
+                        })
+                        result.slack_blocks.append({
+                            "type": "section",
+                            "text": {
+                                "type": "mrkdwn", 
+                                "text": "*Data Export*\nComplete strings extraction data has been uploaded as JSON. File contains all extracted ASCII/UTF-16 strings and categorized findings."
+                            }
+                        })
+                    except Exception as e:
+                        app.logger.error(f"Failed to upload strings JSON: {e}")
+                        result.slack_blocks.append({
+                            "type": "context",
+                            "elements": [{
+                                "type": "mrkdwn",
+                                "text": "Note: Failed to upload JSON file with full strings data"
+                            }]
+                        })
+                
+                # Post the message with results
                 slack_post_json(
                     "https://slack.com/api/chat.postMessage",
                     {
@@ -235,21 +273,6 @@ def process_file_async(file_obj: dict, channel: str, thread_ts: str, user_id: st
         strings_analyzer = StringsAnalyzer(min_length=5)
         strings_result = strings_analyzer.safe_analyze(local, output_dir="/tmp")
         analyzers_results.append(strings_result)
-        
-        # Upload strings JSON file if it was created
-        if strings_result.success and "json_output_path" in strings_result.data:
-            json_path = strings_result.data["json_output_path"]
-            try:
-                response = slack_client.files_upload_v2(
-                    channel=channel,
-                    file=json_path,
-                    title=f"Strings Analysis - {name}",
-                    initial_comment=f"Extracted strings data for {name}",
-                    thread_ts=thread_ts,
-                )
-                app.logger.info(f"Strings JSON uploaded: {response.get('file', {}).get('id')}")
-            except Exception as e:
-                app.logger.error(f"Failed to upload strings JSON: {e}")
 
         # Generate analysis guide (post this first)
         summary_analyzer = SummaryAnalyzer()

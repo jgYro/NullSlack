@@ -185,15 +185,7 @@ class StringsAnalyzer(BaseAnalyzer):
                     "fields": field_pair
                 })
         
-        # Add note about JSON file
-        blocks.append({
-            "type": "context",
-            "elements": [{
-                "type": "mrkdwn", 
-                "text": "Full strings data saved to JSON file. File will be uploaded separately for download."
-            }]
-        })
-        
+        # Note that JSON will be included in data for app.py to handle
         return AnalysisResult(
             analyzer_name="Strings Extractor",
             success=True,
@@ -202,7 +194,8 @@ class StringsAnalyzer(BaseAnalyzer):
                 "ascii_count": total_ascii,
                 "utf16_count": total_utf16,
                 "interesting": interesting,
-                "json_output_path": json_output_path
+                "json_output_path": json_output_path,
+                "json_data": json_data  # Include the data for potential inline display
             },
             slack_blocks=blocks
         )
